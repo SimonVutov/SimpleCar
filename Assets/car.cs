@@ -5,35 +5,36 @@ using UnityEngine;
 public class car : MonoBehaviour
 {
     public GameObject wheelPrefab;
-    GameObject[] wheelPrefabs = new GameObject[4];
-
-    Vector3[] wheels = new Vector3[4];
     public Vector2 wheelDistance = new Vector2(2, 2);
-    float[] oldDist = new float[4];
 
-    float maxSuspentionLength = 3f;
-    float suspentionMultiplier = 120f;
-    float dampSensitivity = 500f;
-    float maxDamp = 40f;
+    GameObject[] wheelPrefabs = new GameObject[4];
+    Vector3[] wheels = new Vector3[4];
+    float rpm = 0;
+
+    float maxSuspentionLength = 1f;
+    float suspentionMultiplier = 320f;
+    float maxTraction = 240f;
+    float traction = 120f;
 
     Rigidbody rb;
 
+    Vector3[] suspensionForce = new Vector3[4];
+    Vector3[] tractionForce = new Vector3[4];
+
     private void Awake()
     {
+        suspentionMultiplier = suspentionMultiplier / maxSuspentionLength;
         for (int i = 0; i < 4; i++)
         {
-            oldDist[i] = maxSuspentionLength;
             wheelPrefabs[i] = Instantiate(wheelPrefab, wheels[i], Quaternion.identity);
         }
     }
 
-    // Start is called before the first frame update
     void Start()
     {
         rb = GetComponent<Rigidbody>();
     }
 
-    // Update is called once per frame
     void Update()
     {
         wheels[0] = transform.right * wheelDistance.x + transform.forward * wheelDistance.y; //front right
@@ -43,21 +44,48 @@ public class car : MonoBehaviour
 
         for (int i = 0; i < 4; i++)
         {
+            if (i == 0 || i == 1) wheelPrefabs[i].transform.eulerAngles = new Vector3(transform.eulerAngles.x, transform.eulerAngles.y + Input.GetAxisRaw("Horizontal") * 45f, transform.eulerAngles.z);
+            else wheelPrefabs[i].transform.rotation = transform.rotation;
+
+            rpm += Input.GetAxisRaw("Vertical") * Time.deltaTime;
+
+            rpm -= ((rpm * Mathf.PI) + -transform.InverseTransformDirection(rb.velocity).z) * Time.deltaTime * 0.1f;
+
             RaycastHit hit;
             Physics.Raycast(transform.position + wheels[i], -transform.up, out hit, maxSuspentionLength);
             if (hit.collider != null)
             {
-                rb.AddForceAtPosition((Mathf.Clamp(maxSuspentionLength - hit.distance, 0, 3) * suspentionMultiplier * transform.up + transform.up *
-                    Mathf.Clamp((oldDist[i] - hit.distance) * dampSensitivity, 0, maxDamp)) * Time.deltaTime, transform.position + wheels[i]);
                 wheelPrefabs[i].transform.position = hit.point + transform.up * 0.5f;
-                wheelPrefabs[i].transform.rotation = transform.rotation;
+
+                wheelPrefabs[i].transform.GetChild(0).Rotate(0, -rpm, 0, Space.Self);
+
+                suspensionForce[i] = transform.up * (Mathf.Clamp(maxSuspentionLength - hit.distance, 0, 3) * suspentionMultiplier);
+
+                tractionForce[i] = Vector3.ClampMagnitude( traction * (transform.right * -transform.InverseTransformDirection(rb.velocity).x + transform.forward * ((rpm * Mathf.PI) + -transform.InverseTransformDirection(rb.velocity).z)), maxTraction );
+                if (i == 0 || i == 1) tractionForce[i] = Quaternion.AngleAxis(45 * Input.GetAxisRaw("Horizontal"), Vector3.up) * tractionForce[i];
+
+                rb.AddForceAtPosition((tractionForce[i] + suspensionForce[i]) * Time.deltaTime, hit.point);
             }
             else
             {
                 wheelPrefabs[i].transform.position = transform.position + wheels[i] - transform.up * (maxSuspentionLength - 0.5f);
-                wheelPrefabs[i].transform.rotation = transform.rotation;
             }
-            oldDist[i] = hit.distance;
+        }
+        
+    }
+
+    void OnDrawGizmosSelected()
+    {
+        for (int i = 0; i < 4; i++)
+        {
+            Gizmos.color = Color.black;
+            Gizmos.DrawLine(wheelPrefabs[i].transform.position, wheelPrefabs[i].transform.position + wheelPrefabs[i].transform.GetChild(0).transform.forward * 2);
+            Gizmos.color = Color.cyan;
+            Gizmos.DrawLine(wheelPrefabs[i].transform.position, wheelPrefabs[i].transform.position - wheelPrefabs[i].transform.GetChild(0).transform.forward * 2);
+
+            Gizmos.color = Color.white;
+            Gizmos.DrawLine(wheelPrefabs[i].transform.position, wheelPrefabs[i].transform.position + rb.velocity * 3);
+
         }
     }
 }
